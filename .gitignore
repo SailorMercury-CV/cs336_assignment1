@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Python cache & build
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Environment
+.venv/
+venv/
+env/
+
+# Data
+data/
+
