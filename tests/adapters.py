@@ -37,6 +37,16 @@ def run_positionwise_feedforward(
         torch.FloatTensor with the output of running your position-wise feedforward network
         with the provided `weights` on the provided `in_features`.
     """
+    from cs336_basics.model import PositionWiseFeedForward
+
+    model = PositionWiseFeedForward(d_model, d_ff).to(in_features.device)
+
+    with torch.no_grad():
+        model.w1.weight.data = weights["w1.weight"]
+        model.w2.weight.data = weights["w2.weight"]
+    
+    return model(in_features)
+
     # Example:
     # If your state dict keys match, you can use `load_state_dict()`
     # my_ffn.load_state_dict(weights)
@@ -85,7 +95,13 @@ def run_scaled_dot_product_attention(
         with the output of running your scaled dot product attention
         implementation with the provided key, query, and value tensors.
     """
-    raise NotImplementedError
+    from cs336_basics.model import scaled_dot_product_attention
+    import torch.nn as nn
+
+    dropout_module = nn.Dropout(pdrop) if pdrop > 0.0 else None
+
+    return scaled_dot_product_attention(Q, K, V, mask, dropout_module)
+
 
 
 def run_multihead_self_attention(
@@ -135,7 +151,26 @@ def run_multihead_self_attention(
         torch.FloatTensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    from cs336_basics.model import CausalMultiHeadSelfAttention
+
+    attention = CausalMultiHeadSelfAttention(d_model, num_heads, attn_pdrop).to(in_features.device)
+
+    q_head_weights = []
+    k_head_weights = []
+    v_head_weights = []
+
+    for i in range(num_heads):
+        q_head_weights.append(weights[f"q_heads.{i}.weight"])
+        k_head_weights.append(weights[f"k_heads.{i}.weight"])
+        v_head_weights.append(weights[f"v_heads.{i}.weight"])
+
+    with torch.no_grad():
+        attention.q_proj.weight.data = torch.cat(q_head_weights, dim=0).to(in_features.device)
+        attention.k_proj.weight.data = torch.cat(k_head_weights, dim=0).to(in_features.device)
+        attention.v_proj.weight.data = torch.cat(v_head_weights, dim=0).to(in_features.device)
+        attention.o_proj.weight.data = weights["output_proj.weight"].to(in_features.device)
+
+    return attention(in_features)
 
 
 def run_transformer_block(
@@ -207,7 +242,28 @@ def run_transformer_block(
         FloatTensor of shape (batch_size, sequence_length, d_model) with the output of
         running the Transformer block on the input features.
     """
-    raise NotImplementedError
+    from cs336_basics.model import TransformerBlock
+
+    model = TransformerBlock(d_model, num_heads, d_ff, attn_pdrop, residual_pdrop).to(in_features.device)
+
+    with torch.no_grad():
+        # First sub-layer: RMSNorm and CausalMultiHeadSelfAttention
+        model.norm1.weight.data = weights['ln1.weight'].to(in_features.device)
+        
+        model.attn.q_proj.weight.data = weights['attn.q_proj.weight'].to(in_features.device)
+        model.attn.k_proj.weight.data = weights['attn.k_proj.weight'].to(in_features.device)
+        model.attn.v_proj.weight.data = weights['attn.v_proj.weight'].to(in_features.device)
+        model.attn.o_proj.weight.data = weights['attn.output_proj.weight'].to(in_features.device)
+        
+        # Second sub-layer: RMSNorm and PositionWiseFeedForward
+        model.norm2.weight.data = weights['ln2.weight'].to(in_features.device)
+        
+        model.ffn.w1.weight.data = weights['ffn.w1.weight'].to(in_features.device)
+        model.ffn.w2.weight.data = weights['ffn.w2.weight'].to(in_features.device)
+    
+    model.eval()
+
+    return model(in_features)
 
 
 def run_transformer_lm(
@@ -300,7 +356,52 @@ def run_transformer_lm(
         FloatTensor of shape (batch size, sequence_length, vocab_size) with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from cs336_basics.model import TransformerLM
+
+    model = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        num_layers=num_layers,
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        attn_pdrop=attn_pdrop,
+        residual_pdrop=residual_pdrop,
+    ).to(in_indices.device)
+
+    # 2. Load all the provided weights from the dictionary
+    with torch.no_grad():
+        # Load top-level embeddings and final layers
+        model.token_embedding.weight.data = weights['token_embeddings.weight'].to(in_indices.device)
+        model.pos_embedding.weight.data = weights['position_embeddings.weight'].to(in_indices.device)
+        
+        model.final_norm.weight.data = weights['ln_final.weight'].to(in_indices.device)
+        
+        # This will work even with tied weights.
+        # It will just load this data into the shared parameter.
+        model.output_embedding.weight.data = weights['lm_head.weight'].to(in_indices.device)
+
+        # Loop through and load weights for each TransformerBlock
+        for i in range(num_layers):
+            block = model.blocks[i]
+            
+            # Attention sub-layer
+            block.norm1.weight.data = weights[f'layers.{i}.ln1.weight'].to(in_indices.device)
+            block.attn.q_proj.weight.data = weights[f'layers.{i}.attn.q_proj.weight'].to(in_indices.device)
+            block.attn.k_proj.weight.data = weights[f'layers.{i}.attn.k_proj.weight'].to(in_indices.device)
+            block.attn.v_proj.weight.data = weights[f'layers.{i}.attn.v_proj.weight'].to(in_indices.device)
+            block.attn.o_proj.weight.data = weights[f'layers.{i}.attn.output_proj.weight'].to(in_indices.device)
+            
+            # FFN sub-layer
+            block.norm2.weight.data = weights[f'layers.{i}.ln2.weight'].to(in_indices.device)
+            block.ffn.w1.weight.data = weights[f'layers.{i}.ffn.w1.weight'].to(in_indices.device)
+            block.ffn.w2.weight.data = weights[f'layers.{i}.ffn.w2.weight'].to(in_indices.device)
+
+    # 3. Run the forward pass
+    # Set to eval() to disable dropout for testing numerical correctness
+    model.eval()
+    
+    return model(in_indices)
 
 
 def run_rmsnorm(
@@ -331,7 +432,18 @@ def run_rmsnorm(
         FloatTensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    from cs336_basics.model import RMSNorm
+
+    # 1. Instantiate your module.
+    model = RMSNorm(d_model=d_model, eps=eps).to(in_features.device)
+
+    # 2. Load the provided weights from the test.
+    with torch.no_grad():
+        model.weight.data = weights["weight"].to(in_features.device)
+    
+    # 3. Run the forward pass with the loaded weights
+    return model(in_features)
+
 
 
 def run_gelu(in_features: torch.FloatTensor) -> torch.FloatTensor:
@@ -346,7 +458,9 @@ def run_gelu(in_features: torch.FloatTensor) -> torch.FloatTensor:
         FloatTensor of with the same shape as `in_features` with the output of applying
         GELU to each element.
     """
-    raise NotImplementedError
+    from cs336_basics.model import gelu
+
+    return gelu(in_features)
 
 
 def run_get_batch(
@@ -390,7 +504,9 @@ def run_softmax(in_features: torch.FloatTensor, dim: int) -> torch.FloatTensor:
         FloatTensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    from cs336_basics.model import softmax
+
+    return softmax(in_features, dim)
 
 
 def run_cross_entropy(inputs: torch.FloatTensor, targets: torch.LongTensor):
