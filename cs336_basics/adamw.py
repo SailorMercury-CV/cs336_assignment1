@@ -1,4 +1,4 @@
-import match
+import math
 import torch
 from torch.optim import Optimizer
 
@@ -12,22 +12,22 @@ class AdamW(Optimizer):
     eps: float = 1e-8,
     weight_decay: float = 0.0
   ):
-  if lr <= 0:
-    raise ValueError("Invalid lr")
-  if eps <= 0:
-    raise ValueError("Invalid eps")
-  if not 0.0 <= betas[0] < 1.0 or not 0.0 <= betas[1] < 1.0:
-    raise ValueError("Invalid betas")
-  if weight_decay < 0.0:
-    raise ValueError("Invalid weight_decay")
+    if lr <= 0:
+      raise ValueError("Invalid lr")
+    if eps <= 0:
+      raise ValueError("Invalid eps")
+    if not 0.0 <= betas[0] < 1.0 or not 0.0 <= betas[1] < 1.0:
+      raise ValueError("Invalid betas")
+    if weight_decay < 0.0:
+      raise ValueError("Invalid weight_decay")
   
-  defaults = dict(
-    lr=lr,
-    betas=betas,
-    eps=eps,
-    weight_decay=weight_decay,
-  )
-  super().__init__(params, defaults)
+    defaults = dict(
+      lr=lr,
+      betas=betas,
+      eps=eps,
+      weight_decay=weight_decay,
+    )
+    super().__init__(params, defaults)
 
   @torch.no_grad()
   def step(self, closure=None):

@@ -645,7 +645,7 @@ def run_load_checkpoint(
     Returns:
         int, the previously-serialized number of iterations.
     """
-    from cs336_basics.checkpoint import load_checkpoint as run_load_ckpt
+    from cs336_basics.checkpoint import load_checkpoint as _load_ckpt
 
     return _load_ckpt(src, model, optimizer)
 

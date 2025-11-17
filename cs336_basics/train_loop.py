@@ -3,6 +3,7 @@ from typing import Callable, Optional
 import time
 import torch
 from torch import nn
+import wandb
 
 from cs336_basics.data import get_batch
 from cs336_basics.losses import cross_entropy
@@ -69,6 +70,36 @@ def train_transformer_lm(
   device = cfg.device
   model.to(device)
   opt = AdamW(model.parameters(), lr=cfg.max_lr, weight_decay=cfg.weight_decay)
+
+  # If no custom logger is provided, log to Weights & Biases by default.
+  if cfg.log_fn is None:
+    wandb.init(
+      project="cs336-transformer",
+      config={
+        "batch_size": cfg.batch_size,
+        "context_length": cfg.context_length,
+        "max_iters": cfg.max_iters,
+        "max_lr": cfg.max_lr,
+        "min_lr": cfg.min_lr,
+        "warmup_iters": cfg.warmup_iters,
+        "cosine_cycle_iters": cfg.cosine_cycle_iters,
+        "weight_decay": cfg.weight_decay,
+        "max_grad_norm": cfg.max_grad_norm,
+        "seed": cfg.seed,
+      }
+    )
+
+    def _wandb_log(it: int, train_loss: float, val_loss: Optional[float], lr: float) -> None:
+      log_data = {
+        "iter": it,
+        "train_loss": train_loss,
+        "lr": lr,
+      }
+
+      if val_loss is not None:
+        log_data["val_loss"] = val_loss
+      wandb.log(log_data)
+    cfg.log_fn = _wandb_log
 
   iter_num, t0 = 0, time.time()
 
